@@ -29,7 +29,7 @@ jobs:
           cache: npm
 
       - name: Instalar dependências
-        run: npm ci
+        run: npm ci --include=dev
 
       - name: Baixar lista oficial
         run: |
@@ -42,7 +42,6 @@ jobs:
 
       - name: Validar lista e preparar importação
         run: npx --no-install tsx scripts/importar-caixa.ts .local-data/Lista_imoveis_RS.csv
-
       - name: Atualizar D1
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
