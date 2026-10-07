@@ -89,7 +89,18 @@ async function collect(force: boolean): Promise<FeedResult> {
       stale: false,
     };
   } catch (error) {
-    console.error("Erro ao consultar a lista da CAIXA:", error);
+    console.error(
+      "CAIXA_DIAGNOSTICO",
+      JSON.stringify({
+        nome: error instanceof Error ? error.name : typeof error,
+        mensagem: error instanceof Error ? error.message : String(error),
+        causa:
+          error instanceof Error && error.cause !== undefined
+            ? String(error.cause)
+            : null,
+        stack: error instanceof Error ? error.stack : null,
+      }),
+    );
 
     if (cached) {
       return {
