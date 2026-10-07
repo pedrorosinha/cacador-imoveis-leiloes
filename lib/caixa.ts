@@ -70,7 +70,29 @@ async function collect(force: boolean): Promise<FeedResult> {
       throw new Error("A lista ultrapassou o limite de tamanho.");
     }
 
-    const csv = new TextDecoder("windows-1252").decode(bytes);
+    let csv: string;
+
+    // Aceita UTF-8 e o Windows-1252 usado na lista da CAIXA.
+    try {
+      csv = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+    } catch {
+      csv = new TextDecoder("windows-1252").decode(bytes);
+    }
+
+    console.info(
+      "CAIXA_RESPOSTA",
+      JSON.stringify({
+        status: response.status,
+        urlFinal: response.url,
+        tipo: response.headers.get("content-type"),
+        tamanho: bytes.byteLength,
+        inicio: csv.slice(0, 500),
+      }),
+    );
+
+    if (/^\s*(?:<!doctype\s+html|<html\b|<head\b|<body\b)/i.test(csv)) {
+      throw new Error("A CAIXA retornou uma página HTML em vez da lista CSV.");
+    }
 
     const properties = parseCaixa(csv).filter(
       (property) => property.uf === "RS",
