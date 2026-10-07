@@ -13,23 +13,28 @@
     "start": "next start --hostname 127.0.0.1",
     "check": "tsc --noEmit",
     "lint": "eslint .",
-    "test": "node --experimental-strip-types --test tests/*.test.mjs"
+    "test": "node --experimental-strip-types --test tests/*.test.mjs",
+    "build:cloudflare": "opennextjs-cloudflare build",
+    "deploy:cloudflare": "opennextjs-cloudflare deploy"
   },
   "dependencies": {
-    "next": "16.3.4",
+    "@opennextjs/cloudflare": "^1.20.9",
+    "lucide-react": "1.31.0",
+    "next": "^16.3.8",
     "react": "19.2.6",
     "react-dom": "19.2.6",
-    "lucide-react": "1.31.0",
     "zod": "3.25.76"
   },
   "devDependencies": {
+    "@cloudflare/workers-types": "^5.20261007.1",
+    "@tailwindcss/postcss": "4.2.1",
     "@types/node": "22.19.19",
     "@types/react": "19.2.14",
     "@types/react-dom": "19.2.3",
-    "@tailwindcss/postcss": "4.2.1",
+    "eslint": "9.39.4",
+    "eslint-config-next": "^16.3.8",
     "tailwindcss": "4.2.1",
     "typescript": "5.9.3",
-    "eslint": "9.39.4",
-    "eslint-config-next": "16.3.4"
+    "wrangler": "^4.148.0"
   }
 }
