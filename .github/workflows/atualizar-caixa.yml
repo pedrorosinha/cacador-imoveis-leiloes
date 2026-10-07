@@ -1,0 +1,50 @@
+name: Atualizar imóveis da CAIXA
+
+on:
+  workflow_dispatch:
+  schedule:
+    # 07h17 em Porto Alegre: 10h17 UTC
+    - cron: "17 10 * * *"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: atualizar-caixa
+  cancel-in-progress: false
+
+jobs:
+  atualizar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Baixar código
+        uses: actions/checkout@v4
+
+      - name: Configurar Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+
+      - name: Instalar dependências
+        run: npm ci
+
+      - name: Baixar lista oficial
+        run: |
+          mkdir -p .local-data
+          curl --fail --show-error --silent --location \
+            --connect-timeout 15 \
+            --max-time 60 \
+            --output .local-data/Lista_imoveis_RS.csv \
+            "https://venda-imoveis.caixa.gov.br/listaweb/Lista_imoveis_RS.csv"
+
+      - name: Validar lista e preparar importação
+        run: npx --no-install tsx scripts/importar-caixa.ts .local-data/Lista_imoveis_RS.csv
+
+      - name: Atualizar D1
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: npx --no-install wrangler d1 execute garimpo-db --remote --file .local-data/importar-caixa.sql --yes
