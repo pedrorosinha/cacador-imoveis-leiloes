@@ -1,12 +1,11 @@
-import { readRecord, saveRecord } from "@/lib/db";
-import { parseCaixa, type Property } from "@/lib/properties";
+import { readRecord } from "@/lib/db";
+import type { Property } from "@/lib/properties";
 
-const SOURCE_URL =
-  "https://venda-imoveis.caixa.gov.br/listaweb/Lista_imoveis_RS.csv";
-
-// Nova chave: não reutiliza o cache antigo limitado a Porto Alegre.
 const CACHE_KEY = "caixa-feed:RS:v2";
-const CACHE_DURATION = 60 * 60 * 1000;
+
+// Ajusta estes limites se quiser.
+const MAX_IMPORT_HOURS = 36;
+const MAX_SOURCE_DAYS = 3;
 
 type StoredFeed = {
   properties: Property[];
@@ -19,133 +18,101 @@ type FeedResult = {
   warning?: string;
 };
 
-let pending: Promise<FeedResult> | null = null;
+function dateOnly(value: string): number | null {
+  const match = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(value);
+  if (!match) return null;
 
-async function collect(force: boolean): Promise<FeedResult> {
+  const day = Number(match[1]);
+  const month = Number(match[2]);
+  const year = Number(match[3]);
+  const date = new Date(Date.UTC(year, month - 1, day));
+
+  if (
+    date.getUTCFullYear() !== year ||
+    date.getUTCMonth() !== month - 1 ||
+    date.getUTCDate() !== day
+  ) {
+    return null;
+  }
+
+  return date.getTime();
+}
+
+export async function getCaixaFeed(): Promise<FeedResult> {
   const record = await readRecord(CACHE_KEY);
   const stored = record?.value as StoredFeed | undefined;
 
-  const validCache =
-    Array.isArray(stored?.properties) &&
-    stored.properties.length > 0 &&
-    stored.properties.every(
+  if (
+    !record ||
+    !Array.isArray(stored?.properties) ||
+    stored.properties.length === 0
+  ) {
+    throw new Error(
+      "Ainda não há uma lista importada. Aguarde a atualização automática.",
+    );
+  }
+
+  const properties = stored.properties;
+
+  if (
+    !properties.every(
       (property) =>
+        property &&
         property.source === "CAIXA" &&
         property.uf === "RS" &&
         typeof property.city === "string" &&
-        property.city.length > 0,
+        property.city.trim().length > 0,
+    )
+  ) {
+    throw new Error(
+      "A lista salva está inválida. Execute novamente a importação.",
     );
+  }
 
-  const cached: FeedResult | null =
-    validCache && record && stored
-      ? {
-          properties: stored.properties,
-          updatedAt: record.updatedAt,
-          stale: false,
-        }
+  const warnings: string[] = [];
+  const importAge = Date.now() - Date.parse(record.updatedAt);
+
+  if (!Number.isFinite(importAge) || importAge < 0) {
+    warnings.push(
+      "A data da última importação não pôde ser validada.",
+    );
+  } else if (importAge > MAX_IMPORT_HOURS * 60 * 60 * 1000) {
+    warnings.push(
+      `A lista não é importada há mais de ${MAX_IMPORT_HOURS} horas.`,
+    );
+  }
+
+  const today = dateOnly(
+    new Intl.DateTimeFormat("pt-BR", {
+      timeZone: "America/Sao_Paulo",
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+    }).format(new Date()),
+  );
+
+  const sourceTime =
+    typeof properties[0].sourceDate === "string"
+      ? dateOnly(properties[0].sourceDate)
       : null;
 
-  if (cached && !force) {
-    const age = Date.now() - Date.parse(cached.updatedAt);
-
-    if (age >= 0 && age < CACHE_DURATION) {
-      return cached;
-    }
-  }
-
-  try {
-    const response = await fetch(SOURCE_URL, {
-      redirect: "follow",
-      cache: "no-store",
-      signal: AbortSignal.timeout(30000),
-    });
-
-    if (!response.ok) {
-      throw new Error(`A CAIXA respondeu HTTP ${response.status}.`);
-    }
-
-    const bytes = await response.arrayBuffer();
-
-    if (bytes.byteLength > 20 * 1024 * 1024) {
-      throw new Error("A lista ultrapassou o limite de tamanho.");
-    }
-
-    let csv: string;
-
-    // Aceita UTF-8 e o Windows-1252 usado na lista da CAIXA.
-    try {
-      csv = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
-    } catch {
-      csv = new TextDecoder("windows-1252").decode(bytes);
-    }
-
-    console.info(
-      "CAIXA_RESPOSTA",
-      JSON.stringify({
-        status: response.status,
-        urlFinal: response.url,
-        tipo: response.headers.get("content-type"),
-        tamanho: bytes.byteLength,
-        inicio: csv.slice(0, 500),
-      }),
+  if (sourceTime === null || today === null || sourceTime > today) {
+    warnings.push(
+      "A data de geração da lista não pôde ser validada.",
     );
-
-    if (/^\s*(?:<!doctype\s+html|<html\b|<head\b|<body\b)/i.test(csv)) {
-      throw new Error("A CAIXA retornou uma página HTML em vez da lista CSV.");
-    }
-
-    const properties = parseCaixa(csv).filter(
-      (property) => property.uf === "RS",
-    );
-
-    // Evita substituir o cache por uma resposta incompleta ou inválida.
-    if (properties.length === 0) {
-      throw new Error("A resposta não trouxe imóveis válidos do RS.");
-    }
-
-    await saveRecord(CACHE_KEY, { properties });
-
-    return {
-      properties,
-      updatedAt: new Date().toISOString(),
-      stale: false,
-    };
-  } catch (error) {
-    console.error(
-      "CAIXA_DIAGNOSTICO",
-      JSON.stringify({
-        nome: error instanceof Error ? error.name : typeof error,
-        mensagem: error instanceof Error ? error.message : String(error),
-        causa:
-          error instanceof Error && error.cause !== undefined
-            ? String(error.cause)
-            : null,
-        stack: error instanceof Error ? error.stack : null,
-      }),
-    );
-
-    if (cached) {
-      return {
-        ...cached,
-        stale: true,
-        warning:
-          "Não foi possível atualizar a CAIXA. Exibindo a última lista salva.",
-      };
-    }
-
-    throw new Error(
-      "Não foi possível consultar a CAIXA e ainda não existe uma lista salva. Tente novamente.",
+  } else if ((today - sourceTime) / 86_400_000 > MAX_SOURCE_DAYS) {
+    warnings.push(
+      `A lista da CAIXA foi gerada há mais de ${MAX_SOURCE_DAYS} dias. ` +
+        "A última importação pode ter recebido o mesmo arquivo.",
     );
   }
-}
 
-export function getCaixaFeed(force = false): Promise<FeedResult> {
-  // Requisições simultâneas compartilham a mesma consulta.
-  if (pending) return pending;
-
-  pending = collect(force).finally(() => {
-    pending = null;
-  });
-
-  return pending;
+  return {
+    properties,
+    updatedAt: record.updatedAt,
+    stale: warnings.length > 0,
+    ...(warnings.length > 0
+      ? { warning: warnings.join(" ") }
+      : {}),
+  };
 }

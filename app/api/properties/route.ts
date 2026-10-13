@@ -5,12 +5,9 @@ import { getCaixaFeed } from "@/lib/caixa";
 import { readAnalyses } from "@/lib/db";
 import type { Scenario } from "@/lib/properties";
 
-export async function GET(request: Request) {
-  const url = new URL(request.url);
-  const force = url.searchParams.get("refresh") === "1";
-
+export async function GET() {
   try {
-    const feed = await getCaixaFeed(force);
+    const feed = await getCaixaFeed();
 
     let analyses: Record<string, Scenario> = {};
     let storage = true;

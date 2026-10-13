@@ -67,8 +67,7 @@ export default function Home() {
   useEffect(() => {
     const controller = new AbortController();
 
-    const endpoint =
-      reloadKey === 0 ? "/api/properties" : "/api/properties?refresh=1";
+    const endpoint = "/api/properties";
 
     fetch(endpoint, {
       signal: controller.signal,
@@ -177,7 +176,7 @@ export default function Home() {
   }, []);
   function refresh() {
     setBusy(true);
-    setNotice("Consultando a lista oficial da CAIXA…");
+    setNotice("Carregando a última lista importada…");
     setReloadKey((value) => value + 1);
   }
   function open(p: Property) {
@@ -322,7 +321,8 @@ export default function Home() {
         <div className="workspace">
           <span className="mini-label">SEU RADAR IMOBILIÁRIO</span>
           <div>
-            <MapPin size={17} /> {city || "Todas as cidades do RS"} <span className="rs">RS</span>
+            <MapPin size={17} /> {city || "Todas as cidades do RS"}{" "}
+            <span className="rs">RS</span>
           </div>
         </div>
         <nav aria-label="Navegação principal">
@@ -359,7 +359,8 @@ export default function Home() {
         <div className="sidebar-bottom">
           <span className="avatar">PR</span>
           <div>
-            Radar particular<small>{city || "Todas as cidades do RS"} · versão inicial</small>
+            Radar particular
+            <small>{city || "Todas as cidades do RS"} · versão inicial</small>
           </div>
         </div>
       </aside>
@@ -391,7 +392,7 @@ export default function Home() {
             </div>
             <button className="primary" disabled={busy} onClick={refresh}>
               <RefreshCw size={17} className={busy ? "spin" : ""} />
-              {busy ? "Consultando…" : "Atualizar CAIXA"}
+              {busy ? "Carregando…" : "Recarregar lista"}
             </button>
           </div>
           {notice && (
@@ -407,27 +408,26 @@ export default function Home() {
             <section className="sources">
               <article>
                 <Database />
-
                 <h2>CAIXA — Rio Grande do Sul</h2>
-
-                <span className="pill green">Consulta dinâmica</span>
+                <span className="pill green">Importação automática</span>
 
                 <p>
-                  {properties.length} imóveis disponíveis na última lista
-                  carregada. A consulta automática utiliza um cache de uma hora.
-                  O botão “Atualizar CAIXA” solicita uma nova consulta.
+                  {properties.length} imóveis na última lista importada. A
+                  atualização é realizada diariamente pelo GitHub Actions.
                 </p>
 
                 <p>
-                  Lista gerada em:{" "}
+                  Lista gerada pela CAIXA em:{" "}
                   {properties[0]?.sourceDate ?? "não informado"}.
                 </p>
 
                 <p>
-                  Última consulta salva:{" "}
+                  Última importação em:{" "}
                   {updated
-                    ? new Date(updated).toLocaleString("pt-BR")
-                    : "nenhuma consulta concluída"}
+                    ? new Date(updated).toLocaleString("pt-BR", {
+                        timeZone: "America/Sao_Paulo",
+                      })
+                    : "nenhuma importação concluída"}
                   .
                 </p>
 
@@ -441,24 +441,28 @@ export default function Home() {
               </article>
 
               <article>
-                <h2>Como os dados são carregados</h2>
+                <h2>Como os dados são atualizados</h2>
 
                 <p>
-                  Os imóveis são consultados na lista oficial da CAIXA e
-                  armazenados no SQLite local. Não existe uma lista fixa
-                  incorporada à aplicação.
+                  A automação baixa e valida a lista oficial da CAIXA e importa
+                  os imóveis no banco online. O site consulta essa última lista
+                  importada.
                 </p>
 
                 <p>
-                  Quando a fonte está indisponível, o sistema utiliza a última
-                  consulta salva e mostra um aviso. Na primeira consulta, é
-                  necessário ter conexão com a fonte.
+                  O botão “Recarregar lista” busca os dados disponíveis no
+                  banco. Ele não inicia uma nova coleta na CAIXA.
+                </p>
+
+                <p>
+                  Se a coleta falhar, a lista anterior permanece disponível. Uma
+                  importação recente pode conter uma lista gerada anteriormente
+                  pela CAIXA.
                 </p>
 
                 <p>
                   Preços, disponibilidade e condições devem ser conferidos no
-                  anúncio. A avaliação divulgada não representa uma garantia de
-                  revenda.
+                  anúncio. A avaliação divulgada não garante o valor de revenda.
                 </p>
               </article>
             </section>
@@ -606,7 +610,11 @@ export default function Home() {
                     CAIXA · Lista gerada em{" "}
                     {ca[0]?.sourceDate ?? "não informado"}
                     {updated &&
-                      ` · Consultada em ${new Date(updated).toLocaleString("pt-BR")}`}
+                      ` · Última importação em ${new Date(
+                        updated,
+                      ).toLocaleString("pt-BR", {
+                        timeZone: "America/Sao_Paulo",
+                      })}`}
                   </span>
                 </div>
                 <div className="sorting">
@@ -635,8 +643,8 @@ export default function Home() {
               {busy && properties.length === 0 ? (
                 <div className="empty" role="status">
                   <RefreshCw className="spin" size={28} />
-                  <h2>Consultando a CAIXA…</h2>
-                  <p>A primeira consulta pode levar alguns segundos.</p>
+                  <h2>Carregando imóveis…</h2>
+                  <p>Buscando a última lista importada.</p>
                 </div>
               ) : results.length === 0 ? (
                 <div className="empty">
